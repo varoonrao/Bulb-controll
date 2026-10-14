@@ -1,0 +1,7 @@
+{
+  "name": "Room Bulb",
+  "device_id": "PUT_DEVICE_ID_HERE",
+  "local_key": "PUT_LOCAL_KEY_HERE",
+  "ip": "Auto",
+  "version": 3.3
+}

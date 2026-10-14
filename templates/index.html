@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ name }}</title>
+<style>
+  :root { --bg:#111; --card:#1c1c1e; --fg:#f2f2f2; --muted:#999; --accent:#ffb347; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui, sans-serif; background:var(--bg); color:var(--fg);
+         display:flex; justify-content:center; padding:16px; }
+  main { width:100%; max-width:420px; display:grid; gap:16px; }
+  h1 { font-size:1.4rem; margin:8px 0; display:flex; justify-content:space-between; align-items:center; }
+  .card { background:var(--card); border-radius:16px; padding:16px; display:grid; gap:12px; }
+  label { color:var(--muted); font-size:.85rem; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  input[type=color] { width:100%; height:56px; border:none; border-radius:12px; background:none; }
+  .row { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  button { padding:12px; border:none; border-radius:12px; background:#2c2c2e; color:var(--fg); font-size:1rem; }
+  button:active { transform:scale(.97); }
+  #power { width:72px; height:72px; border-radius:50%; font-size:1.8rem; }
+  #power.on { background:var(--accent); color:#111; }
+  #msg { color:var(--muted); font-size:.85rem; min-height:1em; }
+  .swatch { height:40px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>{{ name }} <button id="power" aria-label="Toggle power">⏻</button></h1>
+  <div class="card">
+    <label for="bri">Brightness <span id="briv"></span></label>
+    <input id="bri" type="range" min="1" max="100" value="80">
+    <label for="tmp">Warm ↔ Cool</label>
+    <input id="tmp" type="range" min="0" max="100" value="50">
+  </div>
+  <div class="card">
+    <label for="col">Colour</label>
+    <input id="col" type="color" value="#ff8800">
+    <div class="row">
+      <button class="swatch" style="background:#ff0000" data-hex="#ff0000" aria-label="Red"></button>
+      <button class="swatch" style="background:#00ff00" data-hex="#00ff00" aria-label="Green"></button>
+      <button class="swatch" style="background:#0000ff" data-hex="#0000ff" aria-label="Blue"></button>
+      <button class="swatch" style="background:#ff00aa" data-hex="#ff00aa" aria-label="Pink"></button>
+    </div>
+  </div>
+  <div class="card">
+    <label>Scenes</label>
+    <div class="row">
+      <button data-scene="night">Night</button><button data-scene="read">Read</button>
+      <button data-scene="work">Work</button><button data-scene="leisure">Relax</button>
+    </div>
+  </div>
+  <div id="msg"></div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const msg = t => $('#msg').textContent = t;
+async function call(action, body) {
+  try {
+    const r = await fetch('/api/' + action, {method: body === undefined && action === 'status' ? 'GET' : 'POST',
+      headers: {'Content-Type': 'application/json'}, body: body === undefined ? undefined : JSON.stringify(body)});
+    const j = await r.json();
+    msg(j.ok ? '' : 'Error: ' + j.error);
+    return j;
+  } catch (e) { msg('Network error: ' + e); }
+}
+function debounce(fn, ms = 250) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+async function refresh() {
+  const r = await fetch('/api/status').then(r => r.json()).catch(() => null);
+  if (!r || !r.ok) { msg(r ? 'Error: ' + r.error : 'Bulb unreachable'); return; }
+  const s = r.result;
+  $('#power').classList.toggle('on', !!s.is_on);
+  if (s.brightness !== undefined) {
+    // tinytuya reports raw 10..1000 (v2) or 25..255 (v1)
+    const max = s.brightness > 255 ? 1000 : 255;
+    $('#bri').value = Math.round(s.brightness / max * 100);
+  }
+  $('#briv').textContent = $('#bri').value + '%';
+}
+
+$('#power').onclick = async () => { await call('toggle', {}); refresh(); };
+$('#bri').oninput = () => $('#briv').textContent = $('#bri').value + '%';
+$('#bri').onchange = debounce(() => call('brightness', {value: +$('#bri').value}));
+$('#tmp').onchange = debounce(() => call('white', {brightness: +$('#bri').value, temp: +$('#tmp').value}));
+$('#col').oninput = debounce(() => call('color', {hex: $('#col').value}), 300);
+document.querySelectorAll('[data-hex]').forEach(b => b.onclick = () => call('color', {hex: b.dataset.hex}));
+document.querySelectorAll('[data-scene]').forEach(b => b.onclick = () => call('scene', {name: b.dataset.scene}));
+refresh();
+</script>
+</body>
+</html>

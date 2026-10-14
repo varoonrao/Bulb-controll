@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""Web app for the bulb.
+"""Local server for the bulb web app (LAN control via tinytuya).
 
-  /        gyro controller: tilt your phone to change colour and brightness
-  /remote  classic sliders and buttons
+  /         gyro controller: tilt your phone to change colour and brightness
+  /remote   classic sliders and buttons
+
+The pages live in public/ and are the same ones deployed to Netlify, where
+netlify/functions/bulb.mjs serves /api/* through the Tuya cloud instead.
 
 Run `python web.py` (on Android: inside Termux, see docs/ANDROID.md) and open
-http://localhost:8000 in Chrome on the same phone.
+http://localhost:8000 in Chrome on the same phone. Set APP_PIN to require a PIN.
 """
+import hmac
 import os
 import threading
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, request, send_from_directory
 
 from bulb import Bulb
 
-app = Flask(__name__)
+PUBLIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
+app = Flask(__name__, static_folder=os.path.join(PUBLIC, "static"), static_url_path="/static")
 _bulb = None
 _lock = threading.Lock()  # the bulb accepts one TCP session at a time
 
@@ -28,15 +33,28 @@ def bulb():
 
 @app.get("/")
 def gyro():
-    return render_template("gyro.html", name=_name())
+    return send_from_directory(PUBLIC, "index.html")
 
 
 @app.get("/remote")
 def remote():
-    return render_template("index.html", name=_name())
+    return send_from_directory(PUBLIC, "remote.html")
 
 
-def _name():
+@app.before_request
+def check_pin():
+    pin = os.environ.get("APP_PIN")
+    if pin and request.path.startswith("/api/"):
+        if not hmac.compare_digest(request.headers.get("X-Bulb-Pin", ""), pin):
+            return jsonify(ok=False, error="PIN required"), 401
+
+
+@app.get("/api/info")
+def info():
+    return _run(lambda b: None, extra={"backend": "local", "name": bulb_name()})
+
+
+def bulb_name():
     try:
         return bulb().name
     except Exception:
@@ -63,16 +81,16 @@ def action(action):
         "scene": lambda b: b.scene(data["name"]),
     }
     if action not in handlers:
-        return jsonify(error=f"unknown action {action}"), 404
+        return jsonify(ok=False, error=f"unknown action {action}"), 404
     return _run(handlers[action])
 
 
-def _run(fn):
+def _run(fn, extra=None):
+    global _bulb
     try:
         with _lock:
-            return jsonify(ok=True, result=fn(bulb()))
+            return jsonify(ok=True, result=fn(bulb()), **(extra or {}))
     except Exception as e:  # network errors from tinytuya, bad input, missing config
-        global _bulb
         if not isinstance(e, (ValueError, KeyError)):
             _bulb = None  # reconnect on next request
         return jsonify(ok=False, error=str(e)), 502

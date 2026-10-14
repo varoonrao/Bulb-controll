@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ name }}</title>
+<title>Bulb Remote</title>
 <style>
   :root { --bg:#111; --card:#1c1c1e; --fg:#f2f2f2; --muted:#999; --accent:#ffb347; }
   * { box-sizing:border-box; }
@@ -26,7 +26,7 @@
 </head>
 <body>
 <main>
-  <h1>{{ name }} <button id="power" aria-label="Toggle power">⏻</button></h1>
+  <h1><span id="name">Room Bulb</span> <button id="power" aria-label="Toggle power">⏻</button></h1>
   <div class="card">
     <label for="bri">Brightness <span id="briv"></span></label>
     <input id="bri" type="range" min="1" max="100" value="80">
@@ -52,14 +52,13 @@
   </div>
   <div id="msg"></div>
 </main>
+<script src="/static/api.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const msg = t => $('#msg').textContent = t;
 async function call(action, body) {
   try {
-    const r = await fetch('/api/' + action, {method: body === undefined && action === 'status' ? 'GET' : 'POST',
-      headers: {'Content-Type': 'application/json'}, body: body === undefined ? undefined : JSON.stringify(body)});
-    const j = await r.json();
+    const j = await Bulb.request(action, body);
     msg(j.ok ? '' : 'Error: ' + j.error);
     return j;
   } catch (e) { msg('Network error: ' + e); }
@@ -67,7 +66,7 @@ async function call(action, body) {
 function debounce(fn, ms = 250) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
 async function refresh() {
-  const r = await fetch('/api/status').then(r => r.json()).catch(() => null);
+  const r = await Bulb.request('status').catch(() => null);
   if (!r || !r.ok) { msg(r ? 'Error: ' + r.error : 'Bulb unreachable'); return; }
   const s = r.result;
   $('#power').classList.toggle('on', !!s.is_on);
@@ -86,7 +85,7 @@ $('#tmp').onchange = debounce(() => call('white', {brightness: +$('#bri').value,
 $('#col').oninput = debounce(() => call('color', {hex: $('#col').value}), 300);
 document.querySelectorAll('[data-hex]').forEach(b => b.onclick = () => call('color', {hex: b.dataset.hex}));
 document.querySelectorAll('[data-scene]').forEach(b => b.onclick = () => call('scene', {name: b.dataset.scene}));
-refresh();
+Bulb.request('info').then(i => { if (i && i.ok) $('#name').textContent = i.name; }).catch(() => {}).finally(refresh);
 </script>
 </body>
 </html>

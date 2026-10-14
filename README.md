@@ -33,7 +33,12 @@ python cli.py scene night          # night | read | work | leisure | <number>
 python cli.py scan                 # find Tuya devices + IPs on your LAN
 ```
 
-## 📱 Gyro web app (Android)
+## 🌐 Deploy to Netlify (easiest)
+
+Host the gyro app on Netlify and it controls the bulb through the Tuya cloud. There's nothing to
+run on your phone; just open the URL. See **[docs/NETLIFY.md](docs/NETLIFY.md)**.
+
+## 📱 Gyro web app (local, Android + Termux)
 
 Tilt your phone to paint the room: tilt left/right for colour, forward/back for brightness, shake
 to switch on/off, and tap the orb to lock a colour. There's also a *Dial* mode where you lay the
@@ -48,6 +53,7 @@ Full guide: **[docs/ANDROID.md](docs/ANDROID.md)**.
 
 - `/` is the gyro controller
 - `/remote` has classic sliders, a colour picker and scenes (works from any device on your Wi-Fi)
+- Set `APP_PIN=1234` before starting to require a PIN
 
 ## Files
 
@@ -55,10 +61,13 @@ Full guide: **[docs/ANDROID.md](docs/ANDROID.md)**.
 |---|---|
 | `bulb.py` | `Bulb` class: on/off, brightness, white temp, RGB, scenes |
 | `cli.py` | Command-line interface |
-| `web.py` | Flask server for the web app |
-| `templates/gyro.html` | Gyro controller (`/`) |
-| `templates/index.html` | Slider remote (`/remote`) |
-| `static/` | PWA manifest and icon (add to home screen) |
+| `web.py` | Local Flask server for the web app (LAN control) |
+| `netlify/functions/bulb.mjs` | Netlify Function: same `/api/*` routes via the Tuya cloud |
+| `netlify.toml` | Netlify config |
+| `public/index.html` | Gyro controller (`/`) |
+| `public/remote.html` | Slider remote (`/remote`) |
+| `public/static/` | Shared API client, PWA manifest and icon |
+| `docs/NETLIFY.md` | Netlify deployment |
 | `start.sh` | Launcher for Termux |
 | `docs/ANDROID.md` | Running it on your phone |
 | `docs/SETUP.md` | Getting the local key, plus reverse-engineering notes if your bulb isn't Tuya |
@@ -66,5 +75,6 @@ Full guide: **[docs/ANDROID.md](docs/ANDROID.md)**.
 ## Security
 
 `config.json` contains your bulb's **local key**. Anyone with it on your LAN can control the bulb.
-It is git-ignored, so keep it that way. The web remote has **no authentication**, so only run it
-on a trusted home network.
+It is git-ignored, so keep it that way. The local server has no PIN unless you set `APP_PIN`.
+The Netlify function refuses to run without `APP_PIN`, and its Tuya secrets live only in Netlify
+environment variables.

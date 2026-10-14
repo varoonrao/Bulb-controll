@@ -54,6 +54,8 @@ python cli.py status        # should print {"is_on": ..., "brightness": ...}
 
 Open **Chrome → `http://localhost:8000`** and tap **Start gyro**.
 
+Prefer not to run a server on your phone? Deploy to Netlify instead: see [NETLIFY.md](NETLIFY.md).
+
 Tip: in Chrome's menu tap **Add to Home screen**. It then opens full-screen like a normal app,
 but the Termux server must be running.
 
@@ -74,4 +76,4 @@ Buttons: **Power**, **Tilt/Dial** mode switch, **White** (warm white, locks gyro
 - **Red dot / "Bulb error"**: run `python cli.py status` in Termux to see the real error, and check the IP, local key and `version` in SETUP.md.
 - **Nothing happens when tilting**: you must open the page on the *same phone* via `localhost`. Over `http://192.168.x.x`, Chrome blocks motion sensors.
 - **Server stops when the screen turns off**: `start.sh` calls `termux-wake-lock`. Also disable battery optimisation for Termux in Android settings.
-- **Laggy colour**: the app sends at most ~6 updates/second because Tuya bulbs drop faster commands. Raise `SEND_EVERY` in `templates/gyro.html` to make it gentler.
+- **Laggy colour**: the app sends at most ~6 updates/second because Tuya bulbs drop faster commands. Raise `SEND_EVERY` in `public/index.html` to make it gentler.

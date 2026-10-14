@@ -46,7 +46,7 @@
 <div id="glow"></div>
 <main>
   <header>
-    <h1><span id="dot"></span>{{ name }}</h1>
+    <h1><span id="dot"></span><span id="name">Room Bulb</span></h1>
     <span id="lat" style="opacity:.6;font-size:.8rem"></span>
   </header>
 
@@ -74,6 +74,7 @@
   </div>
 </div>
 
+<script src="/static/api.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const root = document.documentElement.style;
@@ -83,21 +84,22 @@ const st = { h: 30, s: 100, v: 80, on: true, locked: false, mode: 'tilt' };
 let target = { ...st };        // smoothed sensor target
 let sent = { h: -1, s: -1, v: -1 };
 let inflight = false, lastSend = 0, gotSensor = false;
-const SEND_EVERY = 160;        // ms between bulb updates (Tuya bulbs choke on > ~6/s)
+// ms between bulb updates and minimum change worth sending. Local LAN is fast (Tuya bulbs choke
+// on > ~6/s); the cloud API is slower and has a monthly call quota, so be gentler there.
+let SEND_EVERY = 160, MIN_DH = 3, MIN_DV = 2;
 
 // ---------- network ----------
 async function api(action, body = {}) {
   const t0 = performance.now();
   try {
-    const r = await fetch('/api/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const j = await r.json();
+    const j = await Bulb.request(action, body);
     $('#dot').className = j.ok ? 'ok' : 'err';
     $('#lat').textContent = j.ok ? Math.round(performance.now() - t0) + ' ms' : '';
     if (!j.ok) $('#hint').textContent = 'Bulb error: ' + j.error;
     return j;
   } catch (e) {
     $('#dot').className = 'err';
-    $('#hint').textContent = 'Server unreachable. Is web.py running in Termux?';
+    $('#hint').textContent = 'Server unreachable: ' + e.message;
   }
 }
 
@@ -105,7 +107,7 @@ async function pump() {
   if (inflight || !st.on) return;
   if (performance.now() - lastSend < SEND_EVERY) return;
   const dh = Math.abs(((st.h - sent.h + 540) % 360) - 180);
-  if (dh < 3 && Math.abs(st.v - sent.v) < 2 && Math.abs(st.s - sent.s) < 3) return;
+  if (dh < MIN_DH && Math.abs(st.v - sent.v) < MIN_DV && Math.abs(st.s - sent.s) < MIN_DH) return;
   inflight = true; lastSend = performance.now();
   const snap = { h: Math.round(st.h), s: Math.round(st.s), v: Math.round(st.v) };
   const j = await api('hsv', snap);
@@ -208,6 +210,11 @@ $('#go').onclick = async () => {
   try { await document.documentElement.requestFullscreen(); } catch (e) {}
   try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch (e) {}
   $('#start').style.display = 'none';
+  const info = await Bulb.request('info').catch(() => null);
+  if (info && info.ok) {
+    $('#name').textContent = info.name;
+    if (info.backend === 'cloud') { SEND_EVERY = 600; MIN_DH = 8; MIN_DV = 5; }
+  }
   api('on');
   // no sensor events after 1.5 s → tell the user
   setTimeout(() => { if (!gotSensor) $('#hint').textContent = 'No gyro data yet. Is this a phone, and is the page on localhost/https?'; }, 1500);

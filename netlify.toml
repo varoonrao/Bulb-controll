@@ -1,0 +1,16 @@
+# Netlify deploy: static web app in public/, bulb control through the Tuya cloud
+# in netlify/functions/bulb.mjs. No build step needed.
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/remote"
+  to = "/remote.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Permissions-Policy = "accelerometer=(self), gyroscope=(self), magnetometer=(self)"
+    X-Content-Type-Options = "nosniff"

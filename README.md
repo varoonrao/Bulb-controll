@@ -33,14 +33,21 @@ python cli.py scene night          # night | read | work | leisure | <number>
 python cli.py scan                 # find Tuya devices + IPs on your LAN
 ```
 
-## Web remote
+## 📱 Gyro web app (Android)
+
+Tilt your phone to paint the room: tilt left/right for colour, forward/back for brightness, shake
+to switch on/off, and tap the orb to lock a colour. There's also a *Dial* mode where you lay the
+phone flat and spin it like a knob.
+
+The server runs on the phone in **Termux** and you open `http://localhost:8000` in Chrome.
+Full guide: **[docs/ANDROID.md](docs/ANDROID.md)**.
 
 ```bash
-python web.py           # serves on 0.0.0.0:8000
+./start.sh              # or: python web.py  (serves on 0.0.0.0:8000)
 ```
 
-Open `http://<your-computer-ip>:8000` on your phone (it must be on the same Wi-Fi). The page has
-power, brightness, warm/cool, a colour picker and scene buttons.
+- `/` is the gyro controller
+- `/remote` has classic sliders, a colour picker and scenes (works from any device on your Wi-Fi)
 
 ## Files
 
@@ -48,7 +55,12 @@ power, brightness, warm/cool, a colour picker and scene buttons.
 |---|---|
 | `bulb.py` | `Bulb` class: on/off, brightness, white temp, RGB, scenes |
 | `cli.py` | Command-line interface |
-| `web.py` + `templates/index.html` | Flask web remote |
+| `web.py` | Flask server for the web app |
+| `templates/gyro.html` | Gyro controller (`/`) |
+| `templates/index.html` | Slider remote (`/remote`) |
+| `static/` | PWA manifest and icon (add to home screen) |
+| `start.sh` | Launcher for Termux |
+| `docs/ANDROID.md` | Running it on your phone |
 | `docs/SETUP.md` | Getting the local key, plus reverse-engineering notes if your bulb isn't Tuya |
 
 ## Security

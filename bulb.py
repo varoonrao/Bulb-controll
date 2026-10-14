@@ -16,7 +16,7 @@ SCENES = {"night": 1, "read": 2, "work": 3, "leisure": 4}
 
 def load_config(path=CONFIG_PATH):
     if not os.path.exists(path):
-        raise SystemExit(
+        raise RuntimeError(
             f"Missing {path}. Copy config.example.json to config.json and fill in "
             "device_id / local_key (see docs/SETUP.md)."
         )
@@ -37,6 +37,8 @@ class Bulb:
         )
         self.dev.set_socketTimeout(5)
         self.dev.set_socketRetryLimit(2)
+        # keep one TCP session open so rapid gyro updates don't pay a handshake each time
+        self.dev.set_socketPersistent(True)
 
     @staticmethod
     def _check(result):
@@ -68,6 +70,11 @@ class Bulb:
 
     def color(self, r, g, b):
         return self._check(self.dev.set_colour(int(r), int(g), int(b)))
+
+    def hsv(self, h, s=100, v=100):
+        """h in degrees 0-360, s and v in percent 0-100."""
+        h = (float(h) % 360) / 360
+        return self._check(self.dev.set_hsv(h, _clamp(s) / 100, max(1, _clamp(v)) / 100))
 
     def hex_color(self, value):
         r, g, b = parse_hex(value)

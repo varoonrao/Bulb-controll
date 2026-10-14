@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" href="/static/icon.svg">
+<title>Bulb Gyro</title>
+<style>
+  :root { --h: 30; --v: 80; --s: 100; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #fff;
+               font-family: system-ui, sans-serif; touch-action: none; user-select: none; }
+  #glow { position: fixed; inset: 0; transition: background .15s linear;
+          background: radial-gradient(circle at 50% 42%,
+            hsl(var(--h) calc(var(--s) * 1%) calc(var(--v) * .5%)) 0%,
+            hsl(var(--h) calc(var(--s) * 1%) calc(var(--v) * .12%)) 55%, #000 100%); }
+  main { position: relative; height: 100%; display: flex; flex-direction: column;
+         align-items: center; justify-content: space-between; padding: 24px 16px calc(24px + env(safe-area-inset-bottom)); }
+  header { width: 100%; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 1.1rem; font-weight: 600; margin: 0; opacity: .9; }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: #666; display: inline-block; margin-right: 6px; }
+  #dot.ok { background: #3ddc84; } #dot.err { background: #ff453a; }
+  #orb { width: min(64vw, 300px); aspect-ratio: 1; border-radius: 50%; border: none; cursor: pointer;
+         background: radial-gradient(circle at 35% 30%, #fff 0%, hsl(var(--h) calc(var(--s) * 1%) 60%) 35%, hsl(var(--h) calc(var(--s) * 1%) 30%) 100%);
+         box-shadow: 0 0 calc(var(--v) * 1.2px) calc(var(--v) * .5px) hsl(var(--h) calc(var(--s) * 1%) 55%);
+         opacity: calc(.25 + var(--v) / 133); transition: box-shadow .15s, opacity .15s;
+         display: grid; place-items: center; color: #000; font-weight: 700; font-size: 1rem; }
+  #orb.off { filter: grayscale(1) brightness(.25); }
+  #orb .lock { background: rgba(0,0,0,.55); color: #fff; padding: 6px 12px; border-radius: 99px; font-size: .85rem; visibility: hidden; }
+  #orb.locked .lock { visibility: visible; }
+  .readout { display: flex; gap: 24px; font-variant-numeric: tabular-nums; font-size: .95rem; opacity: .9; }
+  .readout b { display: block; font-size: 1.6rem; }
+  #hint { text-align: center; font-size: .9rem; opacity: .75; max-width: 320px; line-height: 1.4; min-height: 2.8em; }
+  nav { width: 100%; max-width: 420px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  nav button, nav a { padding: 14px 4px; border: none; border-radius: 14px; background: rgba(255,255,255,.14);
+         color: #fff; font-size: .9rem; text-align: center; text-decoration: none; backdrop-filter: blur(8px); }
+  nav button.on { background: rgba(255,255,255,.85); color: #000; }
+  #start { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; background: rgba(0,0,0,.85); }
+  #start button { padding: 18px 32px; font-size: 1.15rem; border-radius: 99px; border: none; background: #ffb347; color: #000; font-weight: 700; }
+  #start p { opacity: .7; text-align: center; padding: 0 24px; }
+</style>
+</head>
+<body>
+<div id="glow"></div>
+<main>
+  <header>
+    <h1><span id="dot"></span>{{ name }}</h1>
+    <span id="lat" style="opacity:.6;font-size:.8rem"></span>
+  </header>
+
+  <button id="orb" aria-label="Tap to lock or unlock gyro"><span class="lock">🔒 locked</span></button>
+
+  <div class="readout">
+    <div>Hue<b id="rh">–</b></div>
+    <div>Bright<b id="rv">–</b></div>
+    <div>Sat<b id="rs">–</b></div>
+  </div>
+  <div id="hint">Tilt left/right to change colour · tilt forward/back for brightness · shake to switch on/off · tap the orb to lock</div>
+
+  <nav>
+    <button id="power">Power</button>
+    <button id="mode">Tilt</button>
+    <button id="white">White</button>
+    <a href="/remote">Sliders</a>
+  </nav>
+</main>
+
+<div id="start">
+  <div style="display:grid;gap:16px;justify-items:center">
+    <button id="go">Start gyro</button>
+    <p id="startmsg">Hold your phone in front of you, screen facing you.</p>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const root = document.documentElement.style;
+
+// ---------- state ----------
+const st = { h: 30, s: 100, v: 80, on: true, locked: false, mode: 'tilt' };
+let target = { ...st };        // smoothed sensor target
+let sent = { h: -1, s: -1, v: -1 };
+let inflight = false, lastSend = 0, gotSensor = false;
+const SEND_EVERY = 160;        // ms between bulb updates (Tuya bulbs choke on > ~6/s)
+
+// ---------- network ----------
+async function api(action, body = {}) {
+  const t0 = performance.now();
+  try {
+    const r = await fetch('/api/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json();
+    $('#dot').className = j.ok ? 'ok' : 'err';
+    $('#lat').textContent = j.ok ? Math.round(performance.now() - t0) + ' ms' : '';
+    if (!j.ok) $('#hint').textContent = 'Bulb error: ' + j.error;
+    return j;
+  } catch (e) {
+    $('#dot').className = 'err';
+    $('#hint').textContent = 'Server unreachable. Is web.py running in Termux?';
+  }
+}
+
+async function pump() {
+  if (inflight || !st.on) return;
+  if (performance.now() - lastSend < SEND_EVERY) return;
+  const dh = Math.abs(((st.h - sent.h + 540) % 360) - 180);
+  if (dh < 3 && Math.abs(st.v - sent.v) < 2 && Math.abs(st.s - sent.s) < 3) return;
+  inflight = true; lastSend = performance.now();
+  const snap = { h: Math.round(st.h), s: Math.round(st.s), v: Math.round(st.v) };
+  const j = await api('hsv', snap);
+  if (j && j.ok) sent = snap;
+  inflight = false;
+}
+setInterval(pump, 40);
+
+// ---------- rendering ----------
+function render() {
+  root.setProperty('--h', st.h.toFixed(0));
+  root.setProperty('--s', st.s.toFixed(0));
+  root.setProperty('--v', st.on ? st.v.toFixed(0) : 0);
+  $('#rh').textContent = Math.round(st.h) + '°';
+  $('#rv').textContent = Math.round(st.v) + '%';
+  $('#rs').textContent = Math.round(st.s) + '%';
+  $('#orb').classList.toggle('off', !st.on);
+  $('#orb').classList.toggle('locked', st.locked);
+  $('#power').classList.toggle('on', st.on);
+}
+
+// ---------- sensors ----------
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const map = (x, a, b, c, d) => c + (clamp(x, Math.min(a, b), Math.max(a, b)) - a) * (d - c) / (b - a);
+
+// circular low-pass for hue so 359° -> 1° doesn't sweep through the whole wheel
+function lerpHue(a, b, k) { const d = ((b - a + 540) % 360) - 180; return (a + d * k + 360) % 360; }
+
+function onOrientation(e) {
+  if (e.beta == null) return;
+  gotSensor = true;
+  if (st.locked) return;
+  const beta = e.beta, gamma = e.gamma, alpha = e.alpha || 0;
+  if (st.mode === 'tilt') {
+    // left/right tilt (-60°..60°) sweeps the full colour wheel
+    target.h = map(gamma, -60, 60, 0, 360);
+    // upright (≈80°) = full brightness, laid flat (≈10°) = dim
+    target.v = map(beta, 10, 80, 5, 100);
+  } else {
+    // dial mode: lay the phone flat and spin it like a knob
+    target.h = alpha;
+    target.v = map(beta, -40, 40, 5, 100);
+    target.s = map(gamma, -45, 45, 0, 100);
+  }
+}
+
+let lastShake = 0;
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity; if (!a) return;
+  const g = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
+  if (g > 25 && performance.now() - lastShake > 1200) { lastShake = performance.now(); togglePower(); }
+}
+
+function tick() {
+  if (!st.locked) {
+    st.h = lerpHue(st.h, target.h, 0.25);
+    st.v += (target.v - st.v) * 0.25;
+    st.s += (target.s - st.s) * 0.25;
+  }
+  render();
+  requestAnimationFrame(tick);
+}
+
+// ---------- controls ----------
+async function togglePower() {
+  st.on = !st.on; render();
+  if (navigator.vibrate) navigator.vibrate(st.on ? 30 : [30, 60, 30]);
+  await api(st.on ? 'on' : 'off');
+  sent = { h: -1, s: -1, v: -1 };   // resend colour after power-on
+}
+$('#power').onclick = togglePower;
+$('#orb').onclick = () => { st.locked = !st.locked; if (navigator.vibrate) navigator.vibrate(20); render(); };
+$('#mode').onclick = () => {
+  st.mode = st.mode === 'tilt' ? 'dial' : 'tilt';
+  $('#mode').textContent = st.mode === 'tilt' ? 'Tilt' : 'Dial';
+  if (st.mode === 'tilt') target.s = 100;
+  $('#hint').textContent = st.mode === 'tilt'
+    ? 'Tilt left/right to change colour · tilt forward/back for brightness'
+    : 'Lay the phone flat and spin it like a knob for colour · tilt for brightness & saturation';
+};
+$('#white').onclick = async () => {
+  st.locked = true; render();
+  await api('white', { brightness: Math.round(st.v), temp: 40 });
+  $('#hint').textContent = 'Warm white. Tap the orb to unlock gyro colours.';
+};
+
+$('#go').onclick = async () => {
+  try {
+    // iOS needs explicit permission; Android Chrome grants it automatically on secure origins
+    if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+      if (await DeviceOrientationEvent.requestPermission() !== 'granted') throw new Error('denied');
+      if (DeviceMotionEvent.requestPermission) await DeviceMotionEvent.requestPermission();
+    }
+  } catch (e) { $('#startmsg').textContent = 'Motion permission denied.'; return; }
+  if (!window.isSecureContext) {
+    $('#startmsg').textContent = 'Gyro needs https or http://localhost. Open this page on the phone running the server.';
+  }
+  window.addEventListener('deviceorientation', onOrientation);
+  window.addEventListener('devicemotion', onMotion);
+  try { await document.documentElement.requestFullscreen(); } catch (e) {}
+  try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch (e) {}
+  $('#start').style.display = 'none';
+  api('on');
+  // no sensor events after 1.5 s → tell the user
+  setTimeout(() => { if (!gotSensor) $('#hint').textContent = 'No gyro data yet. Is this a phone, and is the page on localhost/https?'; }, 1500);
+};
+
+render(); tick();
+</script>
+</body>
+</html>

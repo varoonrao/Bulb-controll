@@ -1,0 +1,9 @@
+# Secrets — never commit your bulb's local key
+config.json
+devices.json
+tinytuya.json
+snapshot.json
+tuya-raw.json
+__pycache__/
+*.pyc
+.venv/
